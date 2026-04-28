@@ -3,24 +3,14 @@ const express = require('express');
 const cors = require('cors');
 const admin = require('firebase-admin');
 
-// ═══════════════════════════════════════════
-// Firestore initialisation
-// ═══════════════════════════════════════════
-require('dotenv').config();
-const express = require('express');
-const cors = require('cors');
-const admin = require('firebase-admin');
-
-// ═══ Firestore initialisation (works locally and on Render) ═══
+// ▸ Firestore init (works locally with a file, on Render with environment variable)
 if (process.env.FIREBASE_SERVICE_ACCOUNT) {
-  // Render: use the full JSON string from environment variable
   const credentials = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
   admin.initializeApp({
     credential: admin.credential.cert(credentials),
     projectId: process.env.FIRESTORE_PROJECT_ID,
   });
 } else {
-  // Local: use the file path from .env
   const serviceAccount = require(process.env.GOOGLE_APPLICATION_CREDENTIALS);
   admin.initializeApp({
     credential: admin.credential.cert(serviceAccount),
@@ -32,19 +22,15 @@ const db = admin.firestore();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// ═══════════════════════════════════════════
-// CORS – allow local dev and your Vercel frontend
-// ═══════════════════════════════════════════
+// CORS – allow your frontend (replace with your actual Vercel URL once deployed)
 const allowedOrigins = [
   'http://localhost:3000',
-  'https://your-frontend.vercel.app',   // ← replace with your actual Vercel URL
+  'https://your-frontend.vercel.app',   // ← change to your real Vercel URL
 ];
 
 app.use(cors({
-  origin: function (origin, callback) {
-    // Allow requests with no origin (like curl, mobile apps)
-    if (!origin) return callback(null, true);
-    if (allowedOrigins.includes(origin)) {
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
       callback(new Error('Not allowed by CORS'));
@@ -53,11 +39,9 @@ app.use(cors({
 }));
 app.use(express.json());
 
-// ═══════════════════════════════════════════
-// Routes
-// ═══════════════════════════════════════════
+// ─── Routes ─────────────────────────────────────────────
 
-// ─── GET all needs ────────────────────────
+// Get all needs
 app.get('/api/needs', async (req, res) => {
   try {
     const snapshot = await db.collection('needs')
@@ -75,7 +59,7 @@ app.get('/api/needs', async (req, res) => {
   }
 });
 
-// ─── POST a new need (no AI analysis) ─────
+// Create a need (no AI on creation)
 app.post('/api/needs', async (req, res) => {
   try {
     const { title, category, area, affectedCount, description } = req.body;
@@ -99,7 +83,7 @@ app.post('/api/needs', async (req, res) => {
   }
 });
 
-// ─── GET single need ──────────────────────
+// Get a single need
 app.get('/api/needs/:id', async (req, res) => {
   try {
     const doc = await db.collection('needs').doc(req.params.id).get();
@@ -111,7 +95,7 @@ app.get('/api/needs/:id', async (req, res) => {
   }
 });
 
-// ─── Register volunteer ───────────────────
+// Register a volunteer
 app.post('/api/volunteers', async (req, res) => {
   try {
     const { name, phone, ward, skills, availability } = req.body;
@@ -137,26 +121,18 @@ app.post('/api/volunteers', async (req, res) => {
   }
 });
 
-// ─── Match volunteers to a need (uses Gemini) ─────
+// Match volunteers to a need (uses Gemini)
 app.get('/api/needs/:id/matches', async (req, res) => {
   try {
-    // 1. Fetch the need
     const needDoc = await db.collection('needs').doc(req.params.id).get();
     if (!needDoc.exists) return res.status(404).json({ error: 'Need not found' });
     const need = { id: needDoc.id, ...needDoc.data() };
 
-    // 2. Fetch all volunteers
     const volunteersSnap = await db.collection('volunteers').get();
-    const volunteers = volunteersSnap.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
-    }));
+    const volunteers = volunteersSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-    if (volunteers.length === 0) {
-      return res.json([]);
-    }
+    if (volunteers.length === 0) return res.json([]);
 
-    // 3. Build Gemini prompt
     const prompt = `You are a volunteer coordinator. Rank each volunteer with a matchScore (0–100) and a one‑sentence matchReason. Return a JSON array sorted by matchScore descending: [{ volunteerId, matchScore, matchReason }]. Respond only with JSON.
 
 Need details:
@@ -167,26 +143,21 @@ Affected: ${need.affectedCount}
 Description: ${need.description}
 
 Volunteers:
-${volunteers.map(v =>
-      `ID:${v.id} | Name:${v.name} | Ward:${v.ward} | Skills:${v.skills.join(', ')} | Availability:${v.availability || 'Not specified'}`
-    ).join('\n')}`;
+${volunteers.map(v => `ID:${v.id} | Name:${v.name} | Ward:${v.ward} | Skills:${v.skills.join(', ')} | Availability:${v.availability || 'Not specified'}`).join('\n')}`;
 
-    // 4. Call Gemini
     const { GoogleGenerativeAI } = require('@google/generative-ai');
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });  // ✅ workable model
+    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
 
     const result = await model.generateContent(prompt);
     const text = result.response.text().trim();
 
-    // 5. Parse JSON (handle possible markdown fences)
     const jsonStart = text.indexOf('[');
     const jsonEnd = text.lastIndexOf(']');
     if (jsonStart === -1 || jsonEnd === -1) throw new Error('Invalid JSON array from Gemini');
     const jsonString = text.substring(jsonStart, jsonEnd + 1);
     const matches = JSON.parse(jsonString);
 
-    // Enrich with volunteer details
     const enriched = matches.map(match => {
       const volunteer = volunteers.find(v => v.id === match.volunteerId);
       return {
@@ -207,7 +178,6 @@ ${volunteers.map(v =>
   }
 });
 
-// ═══════════════════════════════════════════
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
 });
