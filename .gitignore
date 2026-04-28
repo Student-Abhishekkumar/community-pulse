@@ -1,0 +1,15 @@
+# Environment secrets
+.env
+
+# Firebase service account
+service-account-key.json
+backend/service-account-key.json
+
+# Dependencies
+node_modules/
+backend/node_modules/
+frontend/node_modules/
+
+# Build output (frontend)
+frontend/dist/
+frontend/.vite/
