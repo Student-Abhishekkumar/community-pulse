@@ -6,17 +6,21 @@ const admin = require('firebase-admin');
 // ═══════════════════════════════════════════
 // Firestore initialisation
 // ═══════════════════════════════════════════
-if (process.env.GOOGLE_APPLICATION_CREDENTIALS_BASE64) {
-  // Production (Render) – decode the service account from environment variable
-  const credentials = JSON.parse(
-    Buffer.from(process.env.GOOGLE_APPLICATION_CREDENTIALS_BASE64, 'base64').toString()
-  );
+require('dotenv').config();
+const express = require('express');
+const cors = require('cors');
+const admin = require('firebase-admin');
+
+// ═══ Firestore initialisation (works locally and on Render) ═══
+if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+  // Render: use the full JSON string from environment variable
+  const credentials = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
   admin.initializeApp({
     credential: admin.credential.cert(credentials),
     projectId: process.env.FIRESTORE_PROJECT_ID,
   });
 } else {
-  // Local development – load from file
+  // Local: use the file path from .env
   const serviceAccount = require(process.env.GOOGLE_APPLICATION_CREDENTIALS);
   admin.initializeApp({
     credential: admin.credential.cert(serviceAccount),
