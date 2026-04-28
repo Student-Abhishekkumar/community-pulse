@@ -25,7 +25,7 @@ const PORT = process.env.PORT || 5000;
 // CORS – allow your frontend (replace with your actual Vercel URL once deployed)
 const allowedOrigins = [
   'http://localhost:3000',
-  'https://community-pulse-lac.vercel.app/',   // ← change to your real Vercel URL
+  'https://community-pulse-lac.vercel.app',   // ← change to your real Vercel URL
 ];
 
 app.use(cors({
