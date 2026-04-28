@@ -3,21 +3,57 @@ const express = require('express');
 const cors = require('cors');
 const admin = require('firebase-admin');
 
-// Initialise Firestore
-const serviceAccount = require(process.env.GOOGLE_APPLICATION_CREDENTIALS);
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount),
-  projectId: process.env.FIRESTORE_PROJECT_ID,
-});
+// ═══════════════════════════════════════════
+// Firestore initialisation
+// ═══════════════════════════════════════════
+if (process.env.GOOGLE_APPLICATION_CREDENTIALS_BASE64) {
+  // Production (Render) – decode the service account from environment variable
+  const credentials = JSON.parse(
+    Buffer.from(process.env.GOOGLE_APPLICATION_CREDENTIALS_BASE64, 'base64').toString()
+  );
+  admin.initializeApp({
+    credential: admin.credential.cert(credentials),
+    projectId: process.env.FIRESTORE_PROJECT_ID,
+  });
+} else {
+  // Local development – load from file
+  const serviceAccount = require(process.env.GOOGLE_APPLICATION_CREDENTIALS);
+  admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount),
+    projectId: process.env.FIRESTORE_PROJECT_ID,
+  });
+}
 
 const db = admin.firestore();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-app.use(cors());
+// ═══════════════════════════════════════════
+// CORS – allow local dev and your Vercel frontend
+// ═══════════════════════════════════════════
+const allowedOrigins = [
+  'http://localhost:3000',
+  'https://your-frontend.vercel.app',   // ← replace with your actual Vercel URL
+];
+
+app.use(cors({
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like curl, mobile apps)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  }
+}));
 app.use(express.json());
 
-// ─── GET all needs ──────────────────────────────────────────────
+// ═══════════════════════════════════════════
+// Routes
+// ═══════════════════════════════════════════
+
+// ─── GET all needs ────────────────────────
 app.get('/api/needs', async (req, res) => {
   try {
     const snapshot = await db.collection('needs')
@@ -35,7 +71,7 @@ app.get('/api/needs', async (req, res) => {
   }
 });
 
-// ─── POST a new need (no AI analysis) ───────────────────────────
+// ─── POST a new need (no AI analysis) ─────
 app.post('/api/needs', async (req, res) => {
   try {
     const { title, category, area, affectedCount, description } = req.body;
@@ -59,7 +95,7 @@ app.post('/api/needs', async (req, res) => {
   }
 });
 
-// ─── GET single need (for detail page) ─────────────────────────
+// ─── GET single need ──────────────────────
 app.get('/api/needs/:id', async (req, res) => {
   try {
     const doc = await db.collection('needs').doc(req.params.id).get();
@@ -71,7 +107,7 @@ app.get('/api/needs/:id', async (req, res) => {
   }
 });
 
-// ─── Register volunteer ─────────────────────────────────────────
+// ─── Register volunteer ───────────────────
 app.post('/api/volunteers', async (req, res) => {
   try {
     const { name, phone, ward, skills, availability } = req.body;
@@ -97,7 +133,7 @@ app.post('/api/volunteers', async (req, res) => {
   }
 });
 
-// ─── Match volunteers to a need (uses Gemini) ───────────────────
+// ─── Match volunteers to a need (uses Gemini) ─────
 app.get('/api/needs/:id/matches', async (req, res) => {
   try {
     // 1. Fetch the need
@@ -116,7 +152,7 @@ app.get('/api/needs/:id/matches', async (req, res) => {
       return res.json([]);
     }
 
-    // 3. Build prompt for Gemini
+    // 3. Build Gemini prompt
     const prompt = `You are a volunteer coordinator. Rank each volunteer with a matchScore (0–100) and a one‑sentence matchReason. Return a JSON array sorted by matchScore descending: [{ volunteerId, matchScore, matchReason }]. Respond only with JSON.
 
 Need details:
@@ -134,12 +170,12 @@ ${volunteers.map(v =>
     // 4. Call Gemini
     const { GoogleGenerativeAI } = require('@google/generative-ai');
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });  // ✅ model that works for you
+    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });  // ✅ workable model
 
     const result = await model.generateContent(prompt);
     const text = result.response.text().trim();
 
-    // 5. Parse JSON
+    // 5. Parse JSON (handle possible markdown fences)
     const jsonStart = text.indexOf('[');
     const jsonEnd = text.lastIndexOf(']');
     if (jsonStart === -1 || jsonEnd === -1) throw new Error('Invalid JSON array from Gemini');
@@ -167,6 +203,7 @@ ${volunteers.map(v =>
   }
 });
 
+// ═══════════════════════════════════════════
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
 });
