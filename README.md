@@ -22,6 +22,7 @@ A full‑stack community needs tracker that helps residents report urgent needs 
 | Styling     | CSS (custom, no framework)          |
 
 ## Project Structure
+```bash
 community-pulse/
 ├── backend/
 │ ├── server.js # Express API
@@ -39,6 +40,7 @@ community-pulse/
 │ └── package.json
 ├── .gitignore
 └── README.md
+```
 
 ## Getting Started
 
